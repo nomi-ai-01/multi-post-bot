@@ -1,5 +1,11 @@
 name: Post Video
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "info, tips, story, quiz, cartoon (khali = random)"
+        required: false
+        default: ""
 jobs:
   post:
     runs-on: ubuntu-latest
@@ -12,6 +18,7 @@ jobs:
       - run: pip install requests pillow edge-tts gTTS
       - run: python post_video.py
         env:
+          MODE: ${{ github.event.inputs.mode }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
