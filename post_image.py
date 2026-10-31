@@ -151,6 +151,43 @@ def tg_post(images, caption):
 
 def main():
     fmt = random.choice(list(FORMATS))
-    prompt = (
-        "Tum ek Pakistani Facebook Page ke liye post banate ho. Roman Urdu (Latin letters) mein likho. "
-        f"Format: {fmt}. {FORMATS[fmt]}
+    shape = '{"headline": "", "text": "", "options": [], "answer": "", "explain": "", "caption": "", "photo_query": ""}'
+    prompt = f"""Tum ek Pakistani Facebook Page ke liye post banate ho. Roman Urdu (Latin letters) mein likho.
+Format: {fmt}. {FORMATS[fmt]}
+Topic har baar alag aur dilchasp chuno (seed {random.randint(1, 99999)}): science, history, sports, food, nature, geography, technology, health, general knowledge. Sirf asli aur durust maloomat, koi siyasi ya mazhabi ya ghalat khabar nahi.
+Sirf JSON do is shakal mein: {shape}
+text 160 characters se kam, har option 30 characters se kam. explain = ek chhoti line (jawab kyun sahi hai), fact aur this_or_that mein explain khali rakho. caption 2-3 chhoti lines aur 3 hashtags, caption mein jawab na likho. photo_query English mein 1-2 aam lafz hon jo photo mein mil sakein (jaise nature, food, cricket, city)."""
+    j = gemini(prompt)
+    base = get_photo(j["photo_query"])
+    images = [to_bytes(compose(base, j["headline"], j["text"], j.get("options") or []))]
+    if fmt in ("quiz", "riddle") and j.get("answer"):
+        images.append(to_bytes(compose(base, "JAWAB", j["answer"], [], j.get("explain", ""))))
+    caption = j["caption"]
+    if fmt in ("quiz", "this_or_that", "riddle"):
+        caption += "\n\nAap ka jawab comment mein likhein 👇"
+    if len(images) == 2:
+        caption += "\n(Jawab dekhne ke liye swipe karein ➡️)"
+
+    errors = []
+    try:
+        fb_post(images, caption)
+    except Exception as e:
+        errors.append("Facebook: " + clean(e))
+    try:
+        tg_post(images, caption)
+    except Exception as e:
+        errors.append("Telegram: " + clean(e))
+    if errors:
+        raise RuntimeError(" | ".join(errors))
+    print("POSTED", fmt, "|", j["headline"], "|", j.get("answer"))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        try:
+            from alert import alert
+            alert("❌ multi-post-bot fail: " + clean(e)[:500])
+        except Exception:
+            pass
+        raise
