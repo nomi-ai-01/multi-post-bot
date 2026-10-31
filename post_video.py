@@ -1,4 +1,4 @@
-import os, random, asyncio, subprocess, requests
+8import os, random, asyncio, subprocess, requests
 from PIL import Image, ImageDraw
 from post_image import gemini, clean, font, PAGE_ID, TOKEN, PIX_KEY
 
@@ -196,7 +196,12 @@ Sirf JSON do is shakal mein: {shape}"""
         from stories import video_story
         video_story(path)
     except Exception as e:
-        print("Story fail:", clean(e)[:300])      
+        print("Story fail:", clean(e)[:300]) 
+    try:
+        from youtube_upload import upload
+        upload(path, j["title"], j["caption"])
+    except Exception as e:
+        print("YouTube fail:", clean(e)[:300])
 
 if __name__ == "__main__":
     try:
