@@ -176,12 +176,12 @@ text 160 characters se kam, har option 30 characters se kam. explain = ek chhoti
         tg_post(images, caption)
     except Exception as e:
         errors.append("Telegram: " + clean(e))
-     try:
+    try:
         from stories import photo_story, story_image
         sub = "Jawab hamari post par comment karein" if fmt in ("quiz", "this_or_that", "riddle") else ""
         photo_story(story_image(base, j["headline"], j["text"], j.get("options") or [], sub))
     except Exception as e:
-        print("Story fail:", clean(e)[:300])       
+        print("Story fail:", clean(e)[:300])
     if errors:
         raise RuntimeError(" | ".join(errors))
     print("POSTED", fmt, "|", j["headline"], "|", j.get("answer"))
