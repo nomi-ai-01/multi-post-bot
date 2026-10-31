@@ -9,10 +9,18 @@ FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 FORMATS = {
     "quiz": "General knowledge quiz. text = ek chota sawal. options = 4 jawab (sirf ek sahi). answer = sahi option ka text. headline = 'QUIZ'.",
-    "this_or_that": "This or That. headline = 'THIS or THAT'. text = ek mazedar sawal. options = 2 choices.",
-    "fact": "Dilchasp fact. headline = 'DILCHASP FACT'. text = 1-2 chhoti lines. options = [].",
+    "this_or_that": "This or That. headline = 'THIS or THAT'. text = ek mazedar sawal. options = 2 choices. answer = ''.",
+    "fact": "Dilchasp fact. headline = 'DILCHASP FACT'. text = 1-2 chhoti lines. options = []. answer = ''.",
     "riddle": "Paheli. headline = 'PAHELI'. text = paheli (2-3 chhoti lines). options = []. answer = jawab.",
 }
+
+def clean(s):
+    s = str(s)
+    for k in ["GEMINI_API_KEY", "PIXABAY_KEY", "FB_PAGE_TOKEN", "TG_BOT_TOKEN", "ALERT_BOT_TOKEN"]:
+        v = os.environ.get(k)
+        if v:
+            s = s.replace(v, "***")
+    return s
 
 def gemini(prompt):
     for model in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite"]:
@@ -45,7 +53,7 @@ def font(n):
     except Exception:
         return ImageFont.load_default()
 
-def compose(img, headline, text, options):
+def compose(img, headline, text, options, sub=""):
     S = 1080
     w, h = img.size
     m = min(w, h)
@@ -78,6 +86,10 @@ def compose(img, headline, text, options):
         for i, o in enumerate(options):
             for ln in wrap("ABCD"[i] + ") " + o, font(46), 900):
                 items.append((ln, font(46), (200, 255, 200)))
+    if sub:
+        items.append(("", font(30), None))
+        for ln in wrap(sub, font(42), 900):
+            items.append((ln, font(42), (220, 220, 220)))
 
     total = sum(f.size + 18 for _, f, _ in items)
     y = (S - total) // 2
@@ -89,41 +101,56 @@ def compose(img, headline, text, options):
         y += f.size + 18
     return img
 
+def to_bytes(img):
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=92)
+    return buf.getvalue()
+
+def fb_post(images, caption):
+    base = f"https://graph.facebook.com/v21.0/{PAGE_ID}"
+    if len(images) == 1:
+        r = requests.post(base + "/photos", data={"access_token": TOKEN, "caption": caption},
+                          files={"source": ("p.jpg", images[0], "image/jpeg")}, timeout=120)
+        print("FB", r.status_code, r.text)
+        r.raise_for_status()
+        return
+    ids = []
+    for b in images:
+        r = requests.post(base + "/photos", data={"access_token": TOKEN, "published": "false"},
+                          files={"source": ("p.jpg", b, "image/jpeg")}, timeout=120)
+        print("FB up", r.status_code, r.text)
+        r.raise_for_status()
+        ids.append(r.json()["id"])
+    data = {"access_token": TOKEN, "message": caption}
+    for i, pid in enumerate(ids):
+        data[f"attached_media[{i}]"] = json.dumps({"media_fbid": pid})
+    r = requests.post(base + "/feed", data=data, timeout=120)
+    print("FB feed", r.status_code, r.text)
+    r.raise_for_status()
+
+def tg_post(images, caption):
+    tok = os.environ.get("TG_BOT_TOKEN")
+    ch = os.environ.get("TG_CHANNEL")
+    if not tok or not ch:
+        print("Telegram skip (secrets nahi)")
+        return
+    api = f"https://api.telegram.org/bot{tok}"
+    cap = caption[:1000]
+    if len(images) == 1:
+        r = requests.post(api + "/sendPhoto", data={"chat_id": ch, "caption": cap},
+                          files={"photo": ("p.jpg", images[0], "image/jpeg")}, timeout=120)
+    else:
+        media = [{"type": "photo", "media": "attach://p0", "caption": cap},
+                 {"type": "photo", "media": "attach://p1"}]
+        r = requests.post(api + "/sendMediaGroup",
+                          data={"chat_id": ch, "media": json.dumps(media)},
+                          files={"p0": ("a.jpg", images[0], "image/jpeg"),
+                                 "p1": ("b.jpg", images[1], "image/jpeg")}, timeout=120)
+    print("TG", r.status_code, r.text[:200])
+    r.raise_for_status()
+
 def main():
     fmt = random.choice(list(FORMATS))
     prompt = (
         "Tum ek Pakistani Facebook Page ke liye post banate ho. Roman Urdu (Latin letters) mein likho. "
-        f"Format: {fmt}. {FORMATS[fmt]} "
-        f"Topic har baar alag aur dilchasp chuno (seed {random.randint(1, 99999)}): science, history, sports, food, "
-        "nature, geography, technology, health, general knowledge. Sirf asli aur durust maloomat, "
-        "koi siyasi ya mazhabi ya ghalat khabar nahi. "
-        'Sirf JSON do: {"headline": "", "text": "", "options": [], "answer": "", "caption": "", "photo_query": ""}. '
-        "text 160 characters se kam, har option 30 characters se kam. caption 2-3 chhoti lines aur 3 hashtags. "
-        "photo_query English mein 1-2 aam lafz hon jo photo mein mil sakein (jaise nature, food, cricket, city)."
-    )
-    j = gemini(prompt)
-    img = compose(get_photo(j["photo_query"]), j["headline"], j["text"], j.get("options") or [])
-    buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=92)
-    caption = j["caption"]
-    if fmt in ("quiz", "this_or_that", "riddle"):
-        caption += "\n\nAap ka jawab comment mein likhein 👇"
-    r = requests.post(
-        f"https://graph.facebook.com/v21.0/{PAGE_ID}/photos",
-        data={"access_token": TOKEN, "caption": caption},
-        files={"source": ("p.jpg", buf.getvalue(), "image/jpeg")},
-        timeout=120)
-    print(r.status_code, r.text)
-    r.raise_for_status()
-    print("POSTED", fmt, "|", j["headline"], "|", j.get("answer"))
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        try:
-            from alert import alert
-            alert("❌ multi-post-bot image post fail: " + str(e)[:500])
-        except Exception:
-            pass
-        raise
+        f"Format: {fmt}. {FORMATS[fmt]}
