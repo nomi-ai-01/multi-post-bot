@@ -2,14 +2,20 @@ import os, random, asyncio, subprocess, requests
 from PIL import Image, ImageDraw
 from post_image import gemini, clean, font, PAGE_ID, TOKEN, PIX_KEY
 
-STYLES = [
-    "dilchasp maloomat",
-    "choti kahani jis mein sabaq ho",
-    "5 hairan kun facts",
-    "sehat ka mashwara",
-    "science ka kamaal",
-    "kya aap jante hain",
-]
+MODES = {
+    "info": dict(voice="ur-PK-AsadNeural", vtype="film",
+                 brief="dilchasp maloomat ya 5 hairan kun facts"),
+    "tips": dict(voice="ur-PK-UzmaNeural", vtype="film",
+                 brief="sehat, zindagi ya paison ka ek asaan mashwara"),
+    "story": dict(voice="ur-PK-UzmaNeural", vtype="film",
+                  brief="choti kahani jis mein sabaq ho"),
+    "quiz": dict(voice="ur-PK-AsadNeural", vtype="film",
+                 brief="ek general knowledge sawal 3 options (A, B, C) ke saath. "
+                       "voice ke aakhir mein kaho ke jawab comment mein likhein. "
+                       "jawab kahin na batao. lines mein pehli line sawal, baqi options"),
+    "cartoon": dict(voice="ur-PK-UzmaNeural", vtype="animation",
+                    brief="bachon ke liye chhoti mazedar kahani ya sabaq"),
+}
 
 def run(cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -17,12 +23,12 @@ def run(cmd):
         raise RuntimeError("cmd fail: " + r.stderr[-600:])
     return r.stdout
 
-def make_voice(text, path):
+def make_voice(text, path, voice):
     try:
         import edge_tts
 
         async def go():
-            await edge_tts.Communicate(text, "ur-PK-AsadNeural").save(path)
+            await edge_tts.Communicate(text, voice).save(path)
 
         asyncio.run(go())
         if os.path.getsize(path) < 2000:
@@ -37,14 +43,20 @@ def duration(path):
                "-of", "default=nw=1:nk=1", path])
     return float(out.strip())
 
-def get_clips(queries, n=3):
+def search_clip(q, vtype):
+    r = requests.get("https://pixabay.com/api/videos/", params={
+        "key": PIX_KEY, "q": q, "per_page": 20,
+        "safesearch": "true", "video_type": vtype}, timeout=60)
+    r.raise_for_status()
+    return r.json()["hits"]
+
+def get_clips(queries, vtype, n=3):
     paths = []
     for i in range(n):
         q = queries[i % len(queries)]
-        r = requests.get("https://pixabay.com/api/videos/", params={
-            "key": PIX_KEY, "q": q, "per_page": 20, "safesearch": "true"}, timeout=60)
-        r.raise_for_status()
-        hits = r.json()["hits"]
+        hits = search_clip(q, vtype)
+        if not hits:
+            hits = search_clip(q, "all")
         if not hits:
             continue
         v = random.choice(hits)["videos"]
@@ -85,10 +97,10 @@ def overlay(text, path):
         y += lh
     im.save(path)
 
-def build(j):
-    make_voice(j["voice"], "voice.mp3")
+def build(j, mode):
+    make_voice(j["voice"], "voice.mp3", mode["voice"])
     dur = duration("voice.mp3") + 1.0
-    clips = get_clips(j["clip_queries"])
+    clips = get_clips(j["clip_queries"], mode["vtype"])
     seg = dur / len(clips)
     segs = []
     for i, c in enumerate(clips):
@@ -135,21 +147,51 @@ def fb_video(path, caption):
     print("FB video", r.status_code, r.text[:300])
     r.raise_for_status()
 
+def fb_reel(path, caption):
+    base = f"https://graph.facebook.com/v21.0/{PAGE_ID}/video_reels"
+    r = requests.post(base, data={"upload_phase": "start", "access_token": TOKEN}, timeout=60)
+    print("reel start", r.status_code, r.text[:200])
+    r.raise_for_status()
+    info = r.json()
+    vid, url = info["video_id"], info["upload_url"]
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        u = requests.post(url, headers={"Authorization": "OAuth " + TOKEN,
+                                        "offset": "0", "file_size": str(size)},
+                          data=f, timeout=600)
+    print("reel upload", u.status_code, u.text[:200])
+    u.raise_for_status()
+    r = requests.post(base, data={"upload_phase": "finish", "video_id": vid,
+                                  "video_state": "PUBLISHED", "description": caption,
+                                  "access_token": TOKEN}, timeout=120)
+    print("reel finish", r.status_code, r.text[:300])
+    r.raise_for_status()
+
 def main():
-    style = random.choice(STYLES)
+    name = os.environ.get("MODE") or random.choice(list(MODES))
+    if name not in MODES:
+        name = random.choice(list(MODES))
+    mode = MODES[name]
+    print("MODE:", name)
     shape = '{"title": "", "voice": "", "lines": [], "clip_queries": [], "caption": ""}'
     prompt = f"""Tum ek Pakistani Facebook Reel ke liye script likhte ho.
-Style: {style}. Topic har baar alag aur dilchasp (seed {random.randint(1, 99999)}).
+Qism: {mode["brief"]}.
+Topic har baar alag aur dilchasp (seed {random.randint(1, 99999)}).
 Sirf asli aur durust maloomat, koi siyasi ya mazhabi ya ghalat khabar nahi.
 voice = Urdu rasmul khat (Urdu script) mein 60 se 80 alfaz ki seedhi script.
 lines = 4 se 5 chhoti Roman Urdu lines (har line 60 characters se kam) jo screen par aayengi.
-clip_queries = 3 English search words (1-2 words) jo aam video clips mein mil sakein (nature, city, food, people, sky).
+clip_queries = 3 English search words (1-2 words) jo aam video clips mein mil sakein.
 title Roman Urdu mein. caption = Roman Urdu 2-3 chhoti lines aur 3 hashtags.
 Sirf JSON do is shakal mein: {shape}"""
     j = gemini(prompt)
-    path = build(j)
-    fb_video(path, j["caption"])
-    print("VIDEO POSTED |", j["title"])
+    path = build(j, mode)
+    try:
+        fb_reel(path, j["caption"])
+        print("REEL POSTED |", name, "|", j["title"])
+    except Exception as e:
+        print("Reel fail, normal video:", clean(e)[:300])
+        fb_video(path, j["caption"])
+        print("VIDEO POSTED |", name, "|", j["title"])
 
 if __name__ == "__main__":
     try:
