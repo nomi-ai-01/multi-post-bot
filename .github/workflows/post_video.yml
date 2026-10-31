@@ -1,5 +1,7 @@
 name: Post Video
 on:
+  schedule:
+    - cron: "45 6,16 * * *"
   workflow_dispatch:
     inputs:
       mode:
