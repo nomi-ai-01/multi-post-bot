@@ -1,4 +1,4 @@
-8import os, random, asyncio, subprocess, requests
+import os, random, asyncio, subprocess, requests
 from PIL import Image, ImageDraw
 from post_image import gemini, clean, font, PAGE_ID, TOKEN, PIX_KEY
 
