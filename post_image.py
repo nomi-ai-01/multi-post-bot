@@ -23,7 +23,7 @@ def clean(s):
     return s
 
 def gemini(prompt):
-    for model in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite"]:
+    for model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:    
         r = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
             headers={"x-goog-api-key": GEMINI_KEY, "Content-Type": "application/json"},
