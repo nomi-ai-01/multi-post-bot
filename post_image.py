@@ -160,8 +160,7 @@ text 160 characters se kam, har option 30 characters se kam. explain = ek chhoti
     j = gemini(prompt)
     base = get_photo(j["photo_query"])
     images = [to_bytes(compose(base, j["headline"], j["text"], j.get("options") or []))]
-    if fmt in ("quiz", "riddle") and j.get("answer"):
-        images.append(to_bytes(compose(base, "JAWAB", j["answer"], [], j.get("explain", ""))))
+    
     caption = j["caption"]
     if fmt in ("quiz", "this_or_that", "riddle"):
         caption += "\n\nAap ka jawab comment mein likhein 👇"
