@@ -192,16 +192,21 @@ Sirf JSON do is shakal mein: {shape}"""
         print("Reel fail, normal video:", clean(e)[:300])
         fb_video(path, j["caption"])
         print("VIDEO POSTED |", name, "|", j["title"])
-      try:
+    try:
         from stories import video_story
         video_story(path)
     except Exception as e:
-        print("Story fail:", clean(e)[:300]) 
+        print("Story fail:", clean(e)[:300])
     try:
         from youtube_upload import upload
         upload(path, j["title"], j["caption"])
     except Exception as e:
         print("YouTube fail:", clean(e)[:300])
+        try:
+            from alert import alert
+            alert("YouTube upload fail (token expire ho sakta hai): " + clean(e)[:300])
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     try:
