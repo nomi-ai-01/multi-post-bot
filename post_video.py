@@ -192,6 +192,11 @@ Sirf JSON do is shakal mein: {shape}"""
         print("Reel fail, normal video:", clean(e)[:300])
         fb_video(path, j["caption"])
         print("VIDEO POSTED |", name, "|", j["title"])
+      try:
+        from stories import video_story
+        video_story(path)
+    except Exception as e:
+        print("Story fail:", clean(e)[:300])      
 
 if __name__ == "__main__":
     try:
